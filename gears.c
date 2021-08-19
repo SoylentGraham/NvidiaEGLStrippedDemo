@@ -65,18 +65,10 @@
         }                                         \
     } while (0)
 
-#define NVGLDEMO_EGL_GET_DISPLAY(nativeDisplay) \
-    eglGetDisplay(nativeDisplay)
-
-#define NVGLDEMO_EGL_INITIALIZE(eglDisplay, major, minor) \
-        eglInitialize(eglDisplay, major, minor)
-
-#define NVGLDEMO_EGL_QUERY_STRING(eglDisplay, name) \
-        eglQueryString(eglDisplay, name)
 
 
-long long NvGlDemoSysTime(void);
-#define SYSTIME (NvGlDemoSysTime)
+//long long NvGlDemoSysTime(void);
+//#define SYSTIME (NvGlDemoSysTime)
 
 // More complex functions have their own OS-specific implementation
 void
@@ -314,7 +306,6 @@ static bool NvGlDemoSetDrmOutputMode( void );
 static void NvGlDemoResetDrmDevice(void);
 static void NvGlDemoResetDrmConcetion(void);
 static void NvGlDemoTermDrmDevice(void);
-static void NvGlDemoResetDrmDeviceFnPtr(void);
 
 
 
@@ -480,7 +471,8 @@ static bool CheckExtension(const char *exts, const char *ext)
 
 static bool NvGlDemoInitEglDevice(void)
 {
-    const char* exts = NULL;
+      NvGlDemoLog(__PRETTY_FUNCTION__);
+  const char* exts = NULL;
     EGLint n = 0;
 
     // Get extension string
@@ -545,7 +537,8 @@ NvGlDemoInitEglDevice_fail:
 // Create EGLDevice desktop
 static bool NvGlDemoCreateEglDevice(EGLint devIndx)
 {
-    struct NvGlOutputDevice *devOut = NULL;
+     NvGlDemoLog(__PRETTY_FUNCTION__);
+   struct NvGlOutputDevice *devOut = NULL;
     EGLint n = 0;
 
     if((!nvGlOutDevLst) || (devIndx >= g_devCount)){
@@ -603,6 +596,7 @@ NvGlDemoCreateEglDevice_fail:
 // Create the EGL Device surface
 static bool NvGlDemoCreateSurfaceBuffer(void)
 {
+    NvGlDemoLog(__PRETTY_FUNCTION__);
     EGLint layerIndex;
     struct NvGlOutputDevice *outDev = NULL;
     struct NvGlDemoWindowDevice *winDev = NULL;
@@ -679,7 +673,8 @@ static bool NvGlDemoCreateSurfaceBuffer(void)
 //Reset EGL Device Layer List
 static void NvGlDemoResetEglDeviceLyrLst(struct NvGlOutputDevice *devOut)
 {
-    int indx;
+       NvGlDemoLog(__PRETTY_FUNCTION__);
+   int indx;
     for(indx=0;((devOut && devOut->windowList)&&(indx<devOut->layerCount));indx++){
         devOut->windowList[indx].enflag = false;
         devOut->windowList[indx].index = 0;
@@ -692,7 +687,8 @@ static void NvGlDemoResetEglDeviceLyrLst(struct NvGlOutputDevice *devOut)
 // Destroy all EGL Output Devices
 static void NvGlDemoResetEglDevice(void)
 {
-    int indx;
+        NvGlDemoLog(__PRETTY_FUNCTION__);
+  int indx;
     for(indx=0;indx<g_devCount;indx++){
         nvGlOutDevLst[indx].enflag = false;
         nvGlOutDevLst[indx].index = 0;
@@ -758,6 +754,8 @@ static void NvGlDemoTermWinSurface(void)
 // Load the EGL and DRM libraries if available
 static bool NvGlDemoInitDrmDevice(void)
 {
+          NvGlDemoLog(__PRETTY_FUNCTION__);
+
 #if !defined(__INTEGRITY)
     // Open DRM library
     libDRM = dlopen("libdrm.so.2", RTLD_LAZY);
@@ -815,6 +813,8 @@ NvGlDemoInitDrmDevice_fail:
 //Return the plane type for the specified objectID
 static int GetDrmPlaneType(int drmFd, uint32_t objectID)
 {
+          NvGlDemoLog(__PRETTY_FUNCTION__);
+
     uint32_t i;
     int j;
     int found = 0;
@@ -1030,6 +1030,8 @@ static bool AssignPropertyIDs(int drmFd,
                               struct PropertyIDAddress *table,
                               size_t tableLen)
 {
+          NvGlDemoLog(__PRETTY_FUNCTION__);
+
     uint32_t i;
     drmModeObjectPropertiesPtr pModeObjectProperties =
         pdrmModeObjectGetProperties(drmFd, objectID, objectType);
@@ -1074,6 +1076,8 @@ static bool AssignPropertyIDs(int drmFd,
 // Set output mode
 static bool NvGlDemoSetDrmOutputMode( void )
 {
+          NvGlDemoLog(__PRETTY_FUNCTION__);
+
     int offsetX = 0;
     int offsetY = 0;
     unsigned int sizeX = 0;
@@ -1370,6 +1374,8 @@ NvGlDemoSetDrmLayer_fail:
 // Reset DRM Device
 static void NvGlDemoResetDrmDevice(void)
 {
+          NvGlDemoLog(__PRETTY_FUNCTION__);
+
     if(nvGlDrmDev)
     {
         nvGlDrmDev->fd = 0;
@@ -1461,41 +1467,11 @@ static void NvGlDemoTermDrmDevice(void)
         }
 #endif
         FREE(nvGlDrmDev);
-        NvGlDemoResetDrmDeviceFnPtr();
         nvGlDrmDev = NULL;
     }
     return;
 }
 
-// Reset all Drm Device Function ptr
-static void NvGlDemoResetDrmDeviceFnPtr(void)
-{
-    pdrmOpen = NULL;
-    pdrmClose = NULL;
-    pdrmModeGetResources = NULL;
-    pdrmModeFreeResources = NULL;
-    pdrmModeGetPlaneResources = NULL;
-    pdrmModeFreePlaneResources = NULL;
-    pdrmModeGetConnector = NULL;
-    pdrmModeFreeConnector = NULL;
-    pdrmModeGetEncoder = NULL;
-    pdrmModeFreeEncoder = NULL;
-    pdrmModeGetPlane = NULL;
-    pdrmModeFreePlane = NULL;
-    pdrmModeSetCrtc = NULL;
-    pdrmModeGetCrtc = NULL;
-    pdrmModeSetPlane = NULL;
-    pdrmModeFreeCrtc = NULL;
-    pdrmModeAtomicAlloc = NULL;
-    pdrmModeAtomicAddProperty = NULL;
-    pdrmModeAtomicCommit = NULL;
-    pdrmModeAtomicFree = NULL;
-    pdrmModeObjectGetProperties = NULL;
-    pdrmModeGetProperty = NULL;
-    pdrmModeFreeProperty = NULL;
-    pdrmModeFreeObjectProperties = NULL;
-    pdrmSetClientCap = NULL;
-}
 
 //======================================================================
 // Nvgldemo Display functions
@@ -1803,48 +1779,54 @@ NvGlDemoInitializeParsed(
     EGLint     configCount;
     EGLBoolean eglStatus;
     GLint max_VP_dims[] = {-1, -1};
-    EGLenum   eglExtType = 0;
+    #define eglExtType  EGL_PLATFORM_DEVICE_EXT
 
-        if (!NvGlDemoDisplayInit()) return 0;
+    if (!NvGlDemoDisplayInit()) 
+        return 0;
     
-
-    extensions = NVGLDEMO_EGL_QUERY_STRING(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+/*
+    extensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
     if (extensions && STRSTR(extensions, "EGL_EXT_platform_base")) {
               eglExtType = EGL_PLATFORM_DEVICE_EXT;
     }
     else {
       eglExtType = 0;
     }
+*/
+    NvGlDemoLog("eglExtType=%d",eglExtType);
 
     // Obtain the EGL display
     demoState.display = EGL_NO_DISPLAY;
-    if (eglExtType) {
+    if (eglExtType) 
+    {
         PFNEGLGETPLATFORMDISPLAYEXTPROC  peglGetPlatformDisplayEXT = NULL;
         NVGLDEMO_EGL_GET_PROC_ADDR(eglGetPlatformDisplayEXT, fail, PFNEGLGETPLATFORMDISPLAYEXTPROC);
-        demoState.display = peglGetPlatformDisplayEXT(eglExtType,
-                                                demoState.nativeDisplay, NULL);
+        demoState.display = peglGetPlatformDisplayEXT(eglExtType, demoState.nativeDisplay, NULL);
+    }
+    else
+    {
+        demoState.display = eglGetDisplay(demoState.nativeDisplay);
     }
 
-    if ((demoState.display == EGL_NO_DISPLAY) && (eglExtType != EGL_PLATFORM_DEVICE_EXT)) {
-        eglExtType = 0;
-        demoState.display = NVGLDEMO_EGL_GET_DISPLAY(demoState.nativeDisplay);
-    }
-    if (demoState.display == EGL_NO_DISPLAY) {
+    if (demoState.display == EGL_NO_DISPLAY) 
+    {
         NvGlDemoLog("EGL failed to obtain display.\n");
         goto fail;
     }
 
     // Initialize EGL
-    eglStatus = NVGLDEMO_EGL_INITIALIZE(demoState.display, 0, 0);
+    NvGlDemoLog("eglInitialize demoState.display=%d",demoState.display);
+    eglStatus = eglInitialize(demoState.display, 0, 0);
     if (!eglStatus) {
         NvGlDemoLog("EGL failed to initialize.\n");
         goto fail;
     }
 
     // Query EGL extensions
-    extensions = NVGLDEMO_EGL_QUERY_STRING(demoState.display, EGL_EXTENSIONS);
+    extensions = eglQueryString(demoState.display, EGL_EXTENSIONS);
 
     // Bind GL API
+    NvGlDemoLog("eglBindAPI");
     eglBindAPI(EGL_OPENGL_ES_API);
 
 
@@ -1947,6 +1929,7 @@ NvGlDemoInitializeParsed(
     srfAttrs[srfAttrIndex++] = EGL_NONE;
 
     // Find out how many configurations suit our needs
+    NvGlDemoLog("eglChooseConfig");
     eglStatus = eglChooseConfig(demoState.display, cfgAttrs,
                                 NULL, 0, &configCount);
     if (!eglStatus || !configCount) {
@@ -1962,7 +1945,8 @@ NvGlDemoInitializeParsed(
     }
 
     // Obtain the configuration list from EGL
-    eglStatus = eglChooseConfig(demoState.display, cfgAttrs,
+      NvGlDemoLog("eglChooseConfig");
+  eglStatus = eglChooseConfig(demoState.display, cfgAttrs,
                                 configList, configCount, &configCount);
     if (!eglStatus || !configCount) {
         NvGlDemoLog("EGL failed to populate configuration list.\n");
@@ -1977,7 +1961,8 @@ NvGlDemoInitializeParsed(
     configList = 0;
     NvGlDemoLog("Got config");
 
-     if (!NvGlDemoWindowInit(argc, argv, appName)) goto fail;
+     if (!NvGlDemoWindowInit(argc, argv, appName)) 
+        goto fail;
 
     // For cross-p mode consumer, demoState.stream = EGL_NO_STREAM_KHR. But we don't need the
     // below code path.
@@ -2034,6 +2019,7 @@ NvGlDemoLog("peglCreateStreamProducerSurfaceKHR");
         }
 
         // Create an EGL context
+    NvGlDemoLog("eglCreateContext");
         demoState.context =
             eglCreateContext(demoState.display,
                              demoState.config,
@@ -2045,6 +2031,7 @@ NvGlDemoLog("peglCreateStreamProducerSurfaceKHR");
         }
 
         // Make the context and surface current for rendering
+    NvGlDemoLog("eglMakeCurrent");
         eglStatus = eglMakeCurrent(demoState.display,
                                    demoState.surface, demoState.surface,
                                    demoState.context);
