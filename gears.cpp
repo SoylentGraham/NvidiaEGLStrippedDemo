@@ -227,6 +227,19 @@ struct PropertyIDAddress {
     uint32_t*    ptr;
 };
 
+
+class EglContext
+{
+public:
+    EglContext();
+    ~EglContext();
+
+    void    PrePaint();
+    void    PostPaint();
+};
+
+
+
 // Top level initialization/termination functions
 bool NvGlDemoInitialize();
 void NvGlDemoShutdown(void);
@@ -380,35 +393,46 @@ NvGlDemoLog(
 
 
 
+EglContext::EglContext()
+{
+    if ( !NvGlDemoInitialize() )
+        throw std::runtime_error("Init failed");
+}
+
+EglContext::~EglContext()
+{
+    NvGlDemoShutdown();
+}
+
+void EglContext::PrePaint()
+{
+}
+
+void EglContext::PostPaint()
+{
+    if (eglSwapBuffers(demoState.display, demoState.surface) != EGL_TRUE) 
+        throw std::runtimer_error("eglSwapBuffers failed");
+}
+
+
 
 // Entry point of this demo program.
 int main(int argc, char **argv)
 {
-    // Initialize window system and EGL
-    if (!NvGlDemoInitialize() )
-    {
-       return 3;
-    }
-
-
+    EglContext Context;
+    
     int Iterations = 60 * 1;
     for ( int i=0;  i<Iterations; i++ )
     {
+        Context.PrePaint();
+
         float Time = (float)i / (float)Iterations;
         glClearColor(Time,1.0f-Time,0,1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glFinish();
        
-        // Swap a frame
-        if (eglSwapBuffers(demoState.display, demoState.surface) != EGL_TRUE) 
-        {
-            NvGlDemoLog("eglSwapBuffers false");
-            break;
-        }
+        Context.PostPaint();
     }
-
-    // Clean up EGL and window system
-    NvGlDemoShutdown();
 
     return 0;
 }
