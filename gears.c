@@ -1,10 +1,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
-
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES3/gl3.h>
+//#include <GLES3/gl3.h>
 
 #include <ctype.h>
 #include <dlfcn.h>
@@ -118,7 +115,6 @@ void NvGlDemoWindowTerm(void);
 
 
 EGLBoolean NvGlDemoPrepareStreamToAttachProducer(void);
-int NvGlDemoInitProducerProcess(void);
 void NvGlDemoEglTerminate(void);
 
 
@@ -165,8 +161,6 @@ typedef struct {
 NvGlDemoOptions demoOptions;
 NvGlDemoState demoState;
 
-bool NOT_PRODUCER = true;
-bool NOT_CONSUMER = true;
 
 
 // Prints a message to standard out
@@ -359,17 +353,13 @@ static struct NvGlOutputDevice *nvGlOutDevLst = NULL;
 static PFNEGLQUERYDEVICESEXTPROC         peglQueryDevicesEXT = NULL;
 static PFNEGLQUERYDEVICESTRINGEXTPROC    peglQueryDeviceStringEXT = NULL;
 static PFNEGLQUERYDEVICEATTRIBEXTPROC    peglQueryDeviceAttribEXT = NULL;
-static PFNEGLGETPLATFORMDISPLAYEXTPROC   peglGetPlatformDisplayEXT = NULL;
 static PFNEGLGETOUTPUTLAYERSEXTPROC      peglGetOutputLayersEXT = NULL;
-static PFNEGLQUERYOUTPUTLAYERSTRINGEXTPROC
-peglQueryOutputLayerStringEXT = NULL;
-static PFNEGLQUERYOUTPUTLAYERATTRIBEXTPROC
-peglQueryOutputLayerAttribEXT = NULL;
+//static PFNEGLQUERYOUTPUTLAYERSTRINGEXTPROC peglQueryOutputLayerStringEXT = NULL;
+//static PFNEGLQUERYOUTPUTLAYERATTRIBEXTPROC peglQueryOutputLayerAttribEXT = NULL;
 static PFNEGLCREATESTREAMKHRPROC         peglCreateStreamKHR = NULL;
 static PFNEGLDESTROYSTREAMKHRPROC        peglDestroyStreamKHR = NULL;
 static PFNEGLSTREAMCONSUMEROUTPUTEXTPROC peglStreamConsumerOutputEXT = NULL;
-static PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC
-peglCreateStreamProducerSurfaceKHR = NULL;
+static PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC peglCreateStreamProducerSurfaceKHR = NULL;
 static PFNEGLOUTPUTLAYERATTRIBEXTPROC      peglOutputLayerAttribEXT = NULL;
 
 // DRM Device specific variable
@@ -493,10 +483,7 @@ static bool NvGlDemoInitEglDevice(void)
     NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryDevicesEXT, NvGlDemoInitEglDevice_fail, PFNEGLQUERYDEVICESEXTPROC);
     NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryDeviceStringEXT, NvGlDemoInitEglDevice_fail, PFNEGLQUERYDEVICESTRINGEXTPROC);
     NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryDeviceAttribEXT, NvGlDemoInitEglDevice_fail, PFNEGLQUERYDEVICEATTRIBEXTPROC);
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglGetPlatformDisplayEXT, NvGlDemoInitEglDevice_fail, PFNEGLGETPLATFORMDISPLAYEXTPROC);
     NVGLDEMO_EGL_GET_PROC_ADDR(eglGetOutputLayersEXT, NvGlDemoInitEglDevice_fail, PFNEGLGETOUTPUTLAYERSEXTPROC);
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryOutputLayerStringEXT, NvGlDemoInitEglDevice_fail, PFNEGLQUERYOUTPUTLAYERSTRINGEXTPROC);
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryOutputLayerAttribEXT, NvGlDemoInitEglDevice_fail, PFNEGLQUERYOUTPUTLAYERATTRIBEXTPROC);
     NVGLDEMO_EGL_GET_PROC_ADDR(eglCreateStreamKHR, NvGlDemoInitEglDevice_fail, PFNEGLCREATESTREAMKHRPROC);
     NVGLDEMO_EGL_GET_PROC_ADDR(eglDestroyStreamKHR, NvGlDemoInitEglDevice_fail, PFNEGLDESTROYSTREAMKHRPROC);
     NVGLDEMO_EGL_GET_PROC_ADDR(eglStreamConsumerOutputEXT, NvGlDemoInitEglDevice_fail, PFNEGLSTREAMCONSUMEROUTPUTEXTPROC);
@@ -568,20 +555,22 @@ static bool NvGlDemoCreateEglDevice(EGLint devIndx)
     }
 
     // Obtain the total number of available layers and allocate an array of window pointers for them
-    if (!peglGetOutputLayersEXT(devOut->eglDpy, NULL, NULL, 0, &n) || !n) {
+    if (!peglGetOutputLayersEXT(devOut->eglDpy, NULL, NULL, 0, &n) || !n) 
+    {
         NvGlDemoLog("peglGetOutputLayersEXT_fail[%u]\n",n);
         goto NvGlDemoCreateEglDevice_fail;
     }
     devOut->layerList  = (EGLOutputLayerEXT*)MALLOC(n * sizeof(EGLOutputLayerEXT));
     devOut->windowList = (struct NvGlDemoWindowDevice*)MALLOC(n * sizeof(struct NvGlDemoWindowDevice));
-    if (devOut->layerList && devOut->windowList) {
-        NvGlDemoResetEglDeviceLyrLst(devOut);
-        memset(devOut->windowList, 0, (n*sizeof(struct NvGlDemoWindowDevice)));
-        memset(devOut->layerList, 0, (n*sizeof(EGLOutputLayerEXT)));
-    } else {
+    if (!devOut->layerList || !devOut->windowList) 
+    {
         NvGlDemoLog("Failed to allocate list of layers and windows");
-        goto NvGlDemoCreateEglDevice_fail;
+        return false;
     }
+
+    NvGlDemoResetEglDeviceLyrLst(devOut);
+    memset(devOut->windowList, 0, (n*sizeof(struct NvGlDemoWindowDevice)));
+     memset(devOut->layerList, 0, (n*sizeof(EGLOutputLayerEXT)));
 
     devOut->enflag = true;
     return true;
@@ -655,11 +644,14 @@ static bool NvGlDemoCreateSurfaceBuffer(void)
     }
 
     // Connect the output layer to the stream
+    NvGlDemoLog("eglStreamConsumerOutputEXT");
     if (!peglStreamConsumerOutputEXT(outDev->eglDpy, demoState.stream,
                 outDev->layerList[outDev->layerIndex])) {
         return false;
     }
 
+    //  set the swap interval? (vsync?)
+    //  not required
     if (!NvGlDemoSwapInterval(outDev->eglDpy, swapInterval)) {
         return false;
     }
@@ -866,6 +858,7 @@ static int GetDrmPlaneType(int drmFd, uint32_t objectID)
 // Create DRM/EGLDevice desktop
 static bool NvGlDemoCreateDrmDevice( EGLint devIndx )
 {
+    NvGlDemoLog(__PRETTY_FUNCTION__);
     struct NvGlOutputDevice *devOut = NULL;
     EGLOutputLayerEXT tempLayer;
     int i = 0, j = 0, n = 0, layerIndex = 0;
@@ -1528,34 +1521,22 @@ int NvGlDemoWindowInit(
         int* argc, char** argv,
         const char* appName)
 {
-    if (!isOutputInitDone) {
-        NvGlDemoLog("Display_init not yet done[%d].\n",isOutputInitDone);
-        return 0;
-    }
+ 
     // Create the EGL Device and DRM Device
-    if(NvGlDemoCreateEglDevice(demoState.platform->curDevIndx)){
-        if(!NvGlDemoCreateDrmDevice(demoState.platform->curDevIndx)){
-            goto NvGlDemoWindowInit_fail;
-        }
-    }else {
-        goto NvGlDemoWindowInit_fail;
-    }
+    if(!NvGlDemoCreateEglDevice(demoState.platform->curDevIndx))
+        return false;
+        
+     if(!NvGlDemoCreateDrmDevice(demoState.platform->curDevIndx))
+       return false;
+
     // Make the Output requirement for Devices
-    if(NvGlDemoSetDrmOutputMode()){
-        if(!NvGlDemoCreateSurfaceBuffer()){
-            goto NvGlDemoWindowInit_fail;
-        }
-    }else {
-        goto NvGlDemoWindowInit_fail;
-    }
+    if(!NvGlDemoSetDrmOutputMode())
+        return false;
 
-    return 1;
+    if(!NvGlDemoCreateSurfaceBuffer())
+        return false;
 
-NvGlDemoWindowInit_fail:
-
-    // Clean up and return
-    NvGlDemoWindowTerm();
-    return 0;
+    return true;
 }
 
 // Close the window
@@ -1706,65 +1687,41 @@ NvGlDemoInitialize(
 EGLBoolean NvGlDemoPrepareStreamToAttachProducer(void)
 {
     NvGlDemoLog(__PRETTY_FUNCTION__);
-    EGLBoolean eglStatus = EGL_FALSE;
-    EGLint streamState = EGL_STREAM_STATE_EMPTY_KHR;
 
-#ifndef ANDROID
     PFNEGLQUERYSTREAMKHRPROC peglQueryStreamKHR = NULL;
     NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryStreamKHR, fail, PFNEGLQUERYSTREAMKHRPROC);
-#endif
 
     // Wait for the consumer to connect to the stream or for failure
-    do {
-        eglStatus = peglQueryStreamKHR(demoState.display, demoState.stream,
+    EGLint streamState = EGL_STREAM_STATE_INITIALIZING_NV;//EGL_STREAM_STATE_EMPTY_KHR;
+    while( streamState == EGL_STREAM_STATE_INITIALIZING_NV || streamState == EGL_STREAM_STATE_CREATED_KHR )
+    {        
+        auto Result = peglQueryStreamKHR(demoState.display, demoState.stream,
                                        EGL_STREAM_STATE_KHR, &streamState);
-        if (!eglStatus) {
-            NvGlDemoLog("Producer : Could not query EGL stream state\n");
-            goto fail;
+        if (!Result) 
+        {
+            NvGlDemoLog("eglQueryStream returned false");
+           return EGL_FALSE;
         }
-    } while ((streamState == EGL_STREAM_STATE_INITIALIZING_NV) ||
-              (streamState == EGL_STREAM_STATE_CREATED_KHR));
+    } 
 
    // Should now be in CONNECTING state
-    if (streamState != EGL_STREAM_STATE_CONNECTING_KHR) {
+    if (streamState != EGL_STREAM_STATE_CONNECTING_KHR) 
+    {
         NvGlDemoLog("Producer: Stream in bad state\n");
-        goto fail;
+        return EGL_FALSE;
     }
 
     return EGL_TRUE;
 
-fail:
-    return EGL_FALSE;
-}
-
-
-int NvGlDemoInitProducerProcess(void)
-{
-      NvGlDemoLog(__PRETTY_FUNCTION__);
-  int err = 0;
-/*
-    NvGlDemoLog("Producer connecting to %s", demoOptions.ipAddr);
-
-    int clientID = NvGlDemoCreateSocket();
-
-    if (clientID != -1) {
-        g_ClientID = clientID;
-
-        NvGlDemoClientConnect(demoOptions.ipAddr, g_ClientID);
-        NvGlDemoClientSend("Hi, This is a sample producer", g_ClientID);
-        err = 1;
-    }
-*/
-    return err;
+    fail:
+     return EGL_FALSE;
 }
 
 
 
-// Start up, initializing native window system and EGL after nvgldemo
-//   options have been parsed. (Still need argc/argv for window system
-//   options.)
-int
-NvGlDemoInitializeParsed(
+
+
+int NvGlDemoInitializeParsed(
     int* argc, char** argv,
     const char *appName,
     int glversion, int depthbits, int stencilbits)
@@ -1779,7 +1736,8 @@ NvGlDemoInitializeParsed(
     EGLint     configCount;
     EGLBoolean eglStatus;
     GLint max_VP_dims[] = {-1, -1};
-    #define eglExtType  EGL_PLATFORM_DEVICE_EXT
+   // #define eglExtType  EGL_PLATFORM_DEVICE_EXT
+   int eglExtType = 0;
 
     if (!NvGlDemoDisplayInit()) 
         return 0;
@@ -1799,12 +1757,14 @@ NvGlDemoInitializeParsed(
     demoState.display = EGL_NO_DISPLAY;
     if (eglExtType) 
     {
-        PFNEGLGETPLATFORMDISPLAYEXTPROC  peglGetPlatformDisplayEXT = NULL;
+         NvGlDemoLog("eglGetPlatformDisplayEXT(nativedisplay=%d)",demoState.nativeDisplay);
+        PFNEGLGETPLATFORMDISPLAYEXTPROC   peglGetPlatformDisplayEXT = NULL;
         NVGLDEMO_EGL_GET_PROC_ADDR(eglGetPlatformDisplayEXT, fail, PFNEGLGETPLATFORMDISPLAYEXTPROC);
         demoState.display = peglGetPlatformDisplayEXT(eglExtType, demoState.nativeDisplay, NULL);
     }
     else
     {
+        NvGlDemoLog("eglGetDisplay(nativedisplay=%d)",demoState.nativeDisplay);
         demoState.display = eglGetDisplay(demoState.nativeDisplay);
     }
 
@@ -1966,12 +1926,17 @@ NvGlDemoInitializeParsed(
 
     // For cross-p mode consumer, demoState.stream = EGL_NO_STREAM_KHR. But we don't need the
     // below code path.
-    if(demoState.stream != EGL_NO_STREAM_KHR && NOT_CONSUMER) {
+    bool NOT_CONSUMER = true;
+    if(demoState.stream != EGL_NO_STREAM_KHR && NOT_CONSUMER) 
+    {
         NvGlDemoLog("A stream + !consumer");
+        /*  gr: dont need this
         if (!NvGlDemoPrepareStreamToAttachProducer()) {
             goto fail;
         }
+*/
 
+    //  gr: do need a surface
        PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC
           peglCreateStreamProducerSurfaceKHR = NULL;
        NVGLDEMO_EGL_GET_PROC_ADDR(eglCreateStreamProducerSurfaceKHR, fail, PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC);
@@ -1982,8 +1947,11 @@ NvGlDemoLog("peglCreateStreamProducerSurfaceKHR");
                     demoState.config,
                     demoState.stream,
                     srfAttrs);
+                    
     }
-    else {
+    else 
+    {
+        //  gr: this doesnt work on nvidia but feels like it would be the right path
         NvGlDemoLog("peglCreatePlatformWindowSurfaceEXT eglExtType=%d",eglExtType);
         PFNEGLCREATEPLATFORMWINDOWSURFACEEXTPROC peglCreatePlatformWindowSurfaceEXT = NULL;
         if(eglExtType != 0) {
