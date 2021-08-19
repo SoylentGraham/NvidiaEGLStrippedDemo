@@ -305,7 +305,7 @@ static bool NvGlDemoCreateSurfaceBuffer(void);
 static void NvGlDemoResetEglDeviceLyrLst(struct NvGlOutputDevice *devOut);
 static void NvGlDemoResetEglDevice(void);
 static void NvGlDemoTermWinSurface(void);
-static void NvGlDemoTermEglDevice(void);
+
 
 // DRM Device internal api
 static bool NvGlDemoInitDrmDevice(void);
@@ -327,11 +327,11 @@ int main(int argc, char **argv)
     }
 
 
-    auto Iterations = 60 * 5;
+    int Iterations = 60 * 1;
     for ( int i=0;  i<Iterations; i++ )
     {
         float Time = (float)i / (float)Iterations;
-        glClearColor(Time,1,0,1);
+        glClearColor(Time,1.0f-Time,0,1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glFinish();
        
@@ -595,7 +595,6 @@ static bool NvGlDemoCreateEglDevice(EGLint devIndx)
 
 NvGlDemoCreateEglDevice_fail:
 
-    NvGlDemoTermEglDevice();
     return false;
 }
 
@@ -745,33 +744,6 @@ static void NvGlDemoTermWinSurface(void)
     outDev->eglDpy = EGL_NO_DISPLAY;
 
     demoState.platform->curDevIndx = 0;
-    return;
-}
-
-// Terminate Egl Device
-static void NvGlDemoTermEglDevice(void)
-{
-    if(nvGlOutDevLst)
-    {
-        int indx;
-        for(indx=0;indx<g_devCount;indx++) {
-            if(nvGlOutDevLst[indx].layerList){
-                FREE(nvGlOutDevLst[indx].layerList);
-            }
-            if(nvGlOutDevLst[indx].windowList) {
-                FREE(nvGlOutDevLst[indx].windowList);
-            }
-            demoState.nativeDisplay = EGL_NO_DISPLAY;
-            nvGlOutDevLst[indx].eglDpy = EGL_NO_DISPLAY;
-        }
-        if(g_devList) {
-            FREE(g_devList);
-        }
-        FREE(nvGlOutDevLst);
-        g_devList = NULL;
-        nvGlOutDevLst = NULL;
-        g_devCount = 0;
-    }
     return;
 }
 
@@ -1573,7 +1545,7 @@ void NvGlDemoDisplayTerm(void)
     }
     // End Device Setup
     NvGlDemoTermDrmDevice();
-    NvGlDemoTermEglDevice();
+    
 }
 
 int NvGlDemoWindowInit(
@@ -1718,10 +1690,6 @@ int parseComplete = 0;
 int parseFailed = 0;
 
 
-// EGL Device specific variable
-static EGLint        nv_devCount = 0;
-static EGLDeviceEXT* nv_devList = NULL;
-
 // Maximum number of attributes for EGL calls
 #define MAX_ATTRIB 31
 
@@ -1794,26 +1762,6 @@ fail:
 }
 
 
-// Extension checking utility
-static int NvGlDemoCheckExtension(const char *exts, const char *ext)
-{
-     NvGlDemoLog(__PRETTY_FUNCTION__);
-   int extLen = (int)strlen(ext);
-    const char *end = exts + strlen(exts);
-
-    while (exts < end) {
-        while (*exts == ' ') {
-            exts++;
-        }
-        int n = strcspn(exts, " ");
-        if ((extLen == n) && (strncmp(ext, exts, n) == 0)) {
-            return 1;
-        }
-        exts += n;
-    }
-    return 0;
-}
-
 int NvGlDemoInitProducerProcess(void)
 {
       NvGlDemoLog(__PRETTY_FUNCTION__);
@@ -1834,64 +1782,7 @@ int NvGlDemoInitProducerProcess(void)
     return err;
 }
 
-static void NvGlDemoTermEglDeviceExt(void)
-{
-      NvGlDemoLog(__PRETTY_FUNCTION__);
-  if (nv_devList) {
-        FREE(nv_devList);
-    }
 
-    demoState.nativeDisplay = EGL_NO_DISPLAY;
-}
-
-static int NvGlDemoInitEglDeviceExt(void)
-{
-    const char* exts = NULL;
-    EGLint n = 0;
-
-    // Get extension string
-    exts = NVGLDEMO_EGL_QUERY_STRING(EGL_NO_DISPLAY, EGL_EXTENSIONS);
-    if (!exts) {
-        NvGlDemoLog("eglQueryString fail.\n");
-        goto NvGlDemoInitEglDeviceExt_fail;
-    }
-
-    // Check extensions and load functions needed for using outputs
-    if (!NvGlDemoCheckExtension(exts, "EGL_EXT_device_base") ||
-            !NvGlDemoCheckExtension(exts, "EGL_EXT_platform_base") ||
-            !NvGlDemoCheckExtension(exts, "EGL_EXT_platform_device")) {
-        NvGlDemoLog("egldevice platform ext is not there.\n");
-        goto NvGlDemoInitEglDeviceExt_fail;
-    }
-
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryDevicesEXT, NvGlDemoInitEglDeviceExt_fail, PFNEGLQUERYDEVICESEXTPROC);
-
-    // Load device list
-    if (!peglQueryDevicesEXT(0, NULL, &n) || !n) {
-        NvGlDemoLog("peglQueryDevicesEXT fail.\n");
-        goto NvGlDemoInitEglDeviceExt_fail;
-    }
-
-    nv_devList = (EGLDeviceEXT*)MALLOC(n * sizeof(EGLDeviceEXT));
-    if (!nv_devList || !peglQueryDevicesEXT(n, nv_devList, &nv_devCount) || !nv_devCount) {
-        NvGlDemoLog("peglQueryDevicesEXT fail.\n");
-        goto NvGlDemoInitEglDeviceExt_fail;
-    }
-
-    if(nv_devCount > 0) {
-        demoState.nativeDisplay = (NativeDisplayType)nv_devList[0];
-        // Success
-        return 1;
-    }
-
-NvGlDemoInitEglDeviceExt_fail:
-
-    NvGlDemoLog("NvGlDemoInitEglDeviceExt-fail.\n");
-
-    NvGlDemoTermEglDeviceExt();
-
-    return 0;
-}
 
 // Start up, initializing native window system and EGL after nvgldemo
 //   options have been parsed. (Still need argc/argv for window system
@@ -2253,8 +2144,6 @@ NvGlDemoShutdown(void)
 
     // Terminate display access
     NvGlDemoDisplayTerm();
-
-    NvGlDemoTermEglDeviceExt();
 }
 
 void
