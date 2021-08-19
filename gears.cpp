@@ -28,7 +28,6 @@
 
 // For standard functions, we use macros to allow overrides.
 // For now, just use posix.
-#define EXIT    exit
 #define MALLOC  malloc
 #define REALLOC realloc
 #define FREE    free
@@ -71,36 +70,28 @@ std::function<FUNCTIONTYPE> GetEglFunction(const char* Name)
 }
 
 
+
+#ifndef DRM_CLIENT_CAP_DRM_NVDC_PERMISSIVE
+#define DRM_CLIENT_CAP_DRM_NVDC_PERMISSIVE 6
+#endif
+
+
+
+#ifndef DRM_PLANE_TYPE_OVERLAY
+#define DRM_PLANE_TYPE_OVERLAY 0
+#endif
+
+#ifndef DRM_PLANE_TYPE_PRIMARY
+#define DRM_PLANE_TYPE_PRIMARY 1
+#endif
+
+#ifndef DRM_PLANE_TYPE_CURSOR
+#define DRM_PLANE_TYPE_CURSOR  2
+#endif
+
 // More complex functions have their own OS-specific implementation
-void NvGlDemoLog(const char* message, ...);
 typedef struct NvGlDemoPlatformState NvGlDemoPlatformState;
 
-typedef struct {
-    NativeDisplayType       nativeDisplay;
-    NativeWindowType        nativeWindow;
-    EGLDisplay              display;
-    EGLStreamKHR            stream;
-    EGLSurface              surface;
-    EGLConfig               config;
-    EGLContext              context;
-    EGLint                  width;
-    EGLint                  height;
-    NvGlDemoPlatformState*  platform;
-} NvGlDemoState;
-
-
-// Top level initialization/termination functions
-bool NvGlDemoInitialize();
-
-void NvGlDemoShutdown(void);
-EGLBoolean NvGlDemoSwapInterval(EGLDisplay dpy, EGLint interval);
-void NvGlDemoDisplayInit(void);
-void NvGlDemoDisplayTerm(void);
-void NvGlDemoWindowTerm(void);
-
-
-EGLBoolean NvGlDemoPrepareStreamToAttachProducer(void);
-void NvGlDemoEglTerminate(void);
 
 
 // Parsed options
@@ -141,63 +132,19 @@ typedef struct {
     int isProtected;                        // Set protected content
 } NvGlDemoOptions;
 
-// Global parsed options structure
-NvGlDemoOptions demoOptions;
+typedef struct {
+    NativeDisplayType       nativeDisplay;
+    NativeWindowType        nativeWindow;
+    EGLDisplay              display;
+    EGLStreamKHR            stream;
+    EGLSurface              surface;
+    EGLConfig               config;
+    EGLContext              context;
+    EGLint                  width;
+    EGLint                  height;
+    NvGlDemoPlatformState*  platform;
+} NvGlDemoState;
 
-// Global demo state
-NvGlDemoState demoState = {
-    (NativeDisplayType)0,  // nativeDisplay
-    (NativeWindowType)0,   // nativeWindow
-    EGL_NO_DISPLAY,        // display
-    EGL_NO_STREAM_KHR,     // stream
-    EGL_NO_SURFACE,        // surface
-    (EGLConfig)0,          // config
-    EGL_NO_CONTEXT,        // context
-    0,                     // width
-    0,                     // height
-    NULL                   // platform
-};
-
-
-// Prints a message to standard out
-void
-NvGlDemoLog(
-    const char* message, ...)
-{
-    va_list ap;
-    int length;
-
-    length = strlen(message);
-    if (length > 0) {
-        va_start(ap, message);
-        vprintf(message,ap);
-        va_end(ap);
-
-        // if not newline terminated, add a newline
-        if (message[length-1] != '\n') {
-            printf("\n");
-        }
-    }
-}
-
-
-#ifndef DRM_CLIENT_CAP_DRM_NVDC_PERMISSIVE
-#define DRM_CLIENT_CAP_DRM_NVDC_PERMISSIVE 6
-#endif
-
-
-
-#ifndef DRM_PLANE_TYPE_OVERLAY
-#define DRM_PLANE_TYPE_OVERLAY 0
-#endif
-
-#ifndef DRM_PLANE_TYPE_PRIMARY
-#define DRM_PLANE_TYPE_PRIMARY 1
-#endif
-
-#ifndef DRM_PLANE_TYPE_CURSOR
-#define DRM_PLANE_TYPE_CURSOR  2
-#endif
 
 // Platform-specific state info
 struct NvGlDemoPlatformState
@@ -280,6 +227,17 @@ struct PropertyIDAddress {
     uint32_t*    ptr;
 };
 
+// Top level initialization/termination functions
+bool NvGlDemoInitialize();
+void NvGlDemoShutdown(void);
+EGLBoolean NvGlDemoSwapInterval(EGLDisplay dpy, EGLint interval);
+void NvGlDemoDisplayInit(void);
+void NvGlDemoDisplayTerm(void);
+void NvGlDemoWindowTerm(void);
+EGLBoolean NvGlDemoPrepareStreamToAttachProducer(void);
+void NvGlDemoEglTerminate(void);
+void NvGlDemoLog(const char* message, ...);
+
 // EGL Device internal api
 static bool NvGlDemoInitEglDevice(void);
 static void NvGlDemoCreateEglDevice(EGLint devIndx);
@@ -299,45 +257,29 @@ static void NvGlDemoTermDrmDevice(void);
 
 
 
-// Entry point of this demo program.
-int main(int argc, char **argv)
-{
-    // Initialize window system and EGL
-    if (!NvGlDemoInitialize() )
-    {
-       return 3;
-    }
+// Global parsed options structure
+NvGlDemoOptions demoOptions;
 
-
-    int Iterations = 60 * 1;
-    for ( int i=0;  i<Iterations; i++ )
-    {
-        float Time = (float)i / (float)Iterations;
-        glClearColor(Time,1.0f-Time,0,1);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glFinish();
-       
-        // Swap a frame
-        if (eglSwapBuffers(demoState.display, demoState.surface) != EGL_TRUE) 
-        {
-            NvGlDemoLog("eglSwapBuffers false");
-            break;
-        }
-    }
-
-    // Clean up EGL and window system
-    NvGlDemoShutdown();
-
-    return 0;
-}
-
+// Global demo state
+NvGlDemoState demoState = {
+    (NativeDisplayType)0,  // nativeDisplay
+    (NativeWindowType)0,   // nativeWindow
+    EGL_NO_DISPLAY,        // display
+    EGL_NO_STREAM_KHR,     // stream
+    EGL_NO_SURFACE,        // surface
+    (EGLConfig)0,          // config
+    EGL_NO_CONTEXT,        // context
+    0,                     // width
+    0,                     // height
+    NULL                   // platform
+};
 
 
 #define ARRAY_LEN(_arr) (sizeof(_arr) / sizeof(_arr[0]))
+#define MAX_EGL_STREAM_ATTR 16
 
-//======================================================================
-// Backend initialization
-//======================================================================
+// Maximum number of attributes for EGL calls
+#define MAX_ATTRIB 31
 
 
 // EGL Device specific variable
@@ -405,6 +347,73 @@ static PFNDRMMODEGETPROPERTY        pdrmModeGetProperty = NULL;
 static PFNDRMMODEFREEPROPERTY       pdrmModeFreeProperty = NULL;
 static PFNDRMMODEFREEOBJECTPROPERTIES pdrmModeFreeObjectProperties = NULL;
 static PFNDRMSETCLIENTCAP           pdrmSetClientCap = NULL;
+
+
+
+
+
+
+
+
+
+
+// Prints a message to standard out
+void
+NvGlDemoLog(
+    const char* message, ...)
+{
+    va_list ap;
+    int length;
+
+    length = strlen(message);
+    if (length > 0) {
+        va_start(ap, message);
+        vprintf(message,ap);
+        va_end(ap);
+
+        // if not newline terminated, add a newline
+        if (message[length-1] != '\n') {
+            printf("\n");
+        }
+    }
+}
+
+
+
+
+// Entry point of this demo program.
+int main(int argc, char **argv)
+{
+    // Initialize window system and EGL
+    if (!NvGlDemoInitialize() )
+    {
+       return 3;
+    }
+
+
+    int Iterations = 60 * 1;
+    for ( int i=0;  i<Iterations; i++ )
+    {
+        float Time = (float)i / (float)Iterations;
+        glClearColor(Time,1.0f-Time,0,1);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glFinish();
+       
+        // Swap a frame
+        if (eglSwapBuffers(demoState.display, demoState.surface) != EGL_TRUE) 
+        {
+            NvGlDemoLog("eglSwapBuffers false");
+            break;
+        }
+    }
+
+    // Clean up EGL and window system
+    NvGlDemoShutdown();
+
+    return 0;
+}
+
+
 
 // Macro to load function pointers
 #if !defined(__INTEGRITY)
@@ -547,8 +556,6 @@ void NvGlDemoCreateEglDevice(EGLint devIndx)
 
     devOut->enflag = true;
 }
-
-#define MAX_EGL_STREAM_ATTR 16
 
 // Create the EGL Device surface
 static bool NvGlDemoCreateSurfaceBuffer(void)
@@ -709,13 +716,6 @@ static void NvGlDemoTermWinSurface(void)
     return;
 }
 
-
-
-
-
-//======================================================================
-// DRM Desktop functions
-//======================================================================
 
 // Load the EGL and DRM libraries if available
 static bool NvGlDemoInitDrmDevice(void)
@@ -1559,10 +1559,6 @@ void NvGlDemoSetDisplayAlpha(float alpha)
     }
 }
 
-
-
-// Maximum number of attributes for EGL calls
-#define MAX_ATTRIB 31
 
 
 
