@@ -71,17 +71,6 @@ std::function<FUNCTIONTYPE> GetEglFunction(const char* Name)
 }
 
 
-#define NVGLDEMO_EGL_GET_PROC_ADDR(name, fail, type)          \
-    do {                                          \
-        p##name = (type)eglGetProcAddress(#name);\
-        if (!p##name) {                           \
-            NvGlDemoLog("%s load fail.\n",#name); \
-            throw std::runtime_error("fail");                  \
-        }                                         \
-    } while (0)
-
-
-
 // More complex functions have their own OS-specific implementation
 void NvGlDemoLog(const char* message, ...);
 typedef struct NvGlDemoPlatformState NvGlDemoPlatformState;
@@ -357,9 +346,6 @@ static EGLDeviceEXT* g_devList = NULL;
 static struct NvGlOutputDevice *nvGlOutDevLst = NULL;
 
 static PFNEGLQUERYDEVICESEXTPROC         peglQueryDevicesEXT = NULL;
-static PFNEGLSTREAMCONSUMEROUTPUTEXTPROC peglStreamConsumerOutputEXT = NULL;
-static PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC peglCreateStreamProducerSurfaceKHR = NULL;
-static PFNEGLOUTPUTLAYERATTRIBEXTPROC      peglOutputLayerAttribEXT = NULL;
 
 // DRM Device specific variable
 static void*         libDRM   = NULL;
@@ -479,11 +465,6 @@ static bool NvGlDemoInitEglDevice(void)
 
     auto peglQueryDevicesEXT = GetEglFunction<decltype(eglQueryDevicesEXT)>("eglQueryDevicesEXT");
     auto peglGetOutputLayersEXT = GetEglFunction<decltype(eglGetOutputLayersEXT)>("eglGetOutputLayersEXT");
-
-
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglStreamConsumerOutputEXT, NvGlDemoInitEglDevice_fail, PFNEGLSTREAMCONSUMEROUTPUTEXTPROC);
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglCreateStreamProducerSurfaceKHR, NvGlDemoInitEglDevice_fail,  PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC);
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglOutputLayerAttribEXT, NvGlDemoInitEglDevice_fail,  PFNEGLOUTPUTLAYERATTRIBEXTPROC);
 
     // Load device list
     if (!peglQueryDevicesEXT(0, NULL, &n) )
@@ -634,6 +615,7 @@ static bool NvGlDemoCreateSurfaceBuffer(void)
     }
 
     // Connect the output layer to the stream
+    auto peglStreamConsumerOutputEXT = GetEglFunction<decltype(eglStreamConsumerOutputEXT)>("eglStreamConsumerOutputEXT");
     NvGlDemoLog("eglStreamConsumerOutputEXT");
     if (!peglStreamConsumerOutputEXT(outDev->eglDpy, demoState.stream,
                 outDev->layerList[outDev->layerIndex])) {
@@ -1504,10 +1486,11 @@ EGLBoolean NvGlDemoSwapInterval(EGLDisplay dpy, EGLint interval)
     EGLAttrib swapInterval = 1;
     char *configStr = NULL;
 
-    if((!nvGlOutDevLst) || (!demoState.platform) ||
+    if ( (!nvGlOutDevLst) || (!demoState.platform) ||
         (demoState.platform->curDevIndx >= g_devCount) ||
-        (nvGlOutDevLst[demoState.platform->curDevIndx].enflag == false) ||
-        (!peglOutputLayerAttribEXT)) {
+        (nvGlOutDevLst[demoState.platform->curDevIndx].enflag == false)
+        ) 
+    {
         return EGL_FALSE;
     }
     outDev = &nvGlOutDevLst[demoState.platform->curDevIndx];
@@ -1535,6 +1518,7 @@ EGLBoolean NvGlDemoSwapInterval(EGLDisplay dpy, EGLint interval)
         swapInterval = (EGLint)interval;
     }
 
+    auto peglOutputLayerAttribEXT = GetEglFunction<decltype(eglOutputLayerAttribEXT)>("eglOutputLayerAttribEXT");
     if (!peglOutputLayerAttribEXT(outDev->eglDpy,
             outDev->layerList[outDev->layerIndex],
             EGL_SWAP_INTERVAL_EXT,
@@ -1670,8 +1654,7 @@ bool NvGlDemoInitialize()
     if (eglExtType) 
     {
          NvGlDemoLog("eglGetPlatformDisplayEXT(nativedisplay=%d)",demoState.nativeDisplay);
-        PFNEGLGETPLATFORMDISPLAYEXTPROC   peglGetPlatformDisplayEXT = NULL;
-        NVGLDEMO_EGL_GET_PROC_ADDR(eglGetPlatformDisplayEXT, fail, PFNEGLGETPLATFORMDISPLAYEXTPROC);
+        auto peglGetPlatformDisplayEXT = GetEglFunction<decltype(eglGetPlatformDisplayEXT)>("eglGetPlatformDisplayEXT");
         demoState.display = peglGetPlatformDisplayEXT(eglExtType, demoState.nativeDisplay, NULL);
     }
     else
@@ -1699,8 +1682,6 @@ bool NvGlDemoInitialize()
     int surfaceTypeMask = 0;
 
     auto peglQueryStreamKHR = GetEglFunction<decltype(eglQueryStreamKHR)>("eglQueryStreamKHR");
-    //PFNEGLQUERYSTREAMKHRPROC peglQueryStreamKHR = NULL;
-    //NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryStreamKHR, fail, PFNEGLQUERYSTREAMKHRPROC);
 
     // Request GL version
     cfgAttrs[cfgAttrIndex++] = EGL_RENDERABLE_TYPE;
@@ -1849,28 +1830,21 @@ bool NvGlDemoInitialize()
         if (!NvGlDemoPrepareStreamToAttachProducer()) {
             goto fail;
         }
-*/
-
-    //  gr: do need a surface
-       PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC
-          peglCreateStreamProducerSurfaceKHR = NULL;
-       NVGLDEMO_EGL_GET_PROC_ADDR(eglCreateStreamProducerSurfaceKHR, fail, PFNEGLCREATESTREAMPRODUCERSURFACEKHRPROC);
-NvGlDemoLog("peglCreateStreamProducerSurfaceKHR");
-         demoState.surface =
-                peglCreateStreamProducerSurfaceKHR(
-                    demoState.display,
-                    demoState.config,
-                    demoState.stream,
-                    srfAttrs);
-                    
+    */
+           //  gr: do need a surface
+        auto peglCreateStreamProducerSurfaceKHR = GetEglFunction<decltype(eglCreateStreamProducerSurfaceKHR)>("eglCreateStreamProducerSurfaceKHR");
+        NvGlDemoLog("peglCreateStreamProducerSurfaceKHR");
+        demoState.surface = peglCreateStreamProducerSurfaceKHR(demoState.display,demoState.config,demoState.stream,srfAttrs);
+                        
     }
     else 
     {
         //  gr: this doesnt work on nvidia but feels like it would be the right path
         NvGlDemoLog("peglCreatePlatformWindowSurfaceEXT eglExtType=%d",eglExtType);
-        PFNEGLCREATEPLATFORMWINDOWSURFACEEXTPROC peglCreatePlatformWindowSurfaceEXT = NULL;
-        if(eglExtType != 0) {
-           NVGLDEMO_EGL_GET_PROC_ADDR(eglCreatePlatformWindowSurfaceEXT, fail, PFNEGLCREATEPLATFORMWINDOWSURFACEEXTPROC);
+        auto peglCreatePlatformWindowSurfaceEXT = GetEglFunction<decltype(eglCreatePlatformWindowSurfaceEXT)>("eglCreatePlatformWindowSurfaceEXT");
+        if(eglExtType != 0) 
+        {
+            //  get function peglCreatePlatformWindowSurfaceEXT
         }
         switch (eglExtType) {
                 case 0:
