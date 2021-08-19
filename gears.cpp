@@ -1,7 +1,11 @@
 #include <EGL/egl.h>
+#define EGL_EGLEXT_PROTOTYPES
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 //#include <GLES3/gl3.h>
+
+#include <functional>
+#include <iostream>
 
 #include <ctype.h>
 #include <dlfcn.h>
@@ -51,6 +55,20 @@
 
 
 
+template<typename FUNCTIONTYPE>
+std::function<FUNCTIONTYPE> GetEglFunction(const char* Name)
+{
+	std::function<FUNCTIONTYPE> Function;
+	auto* FunctionPointer = eglGetProcAddress(Name);
+	if ( !FunctionPointer )
+	{
+		std::cerr << "EGL function " << Name << " not found" << std::endl;
+		return nullptr;
+	}
+
+	Function = reinterpret_cast<FUNCTIONTYPE*>(FunctionPointer);
+	return Function;
+}
 
 
 #define NVGLDEMO_EGL_GET_PROC_ADDR(name, fail, type)          \
@@ -58,26 +76,16 @@
         p##name = (type)eglGetProcAddress(#name);\
         if (!p##name) {                           \
             NvGlDemoLog("%s load fail.\n",#name); \
-            goto fail;                         \
+            throw std::runtime_error("fail");                  \
         }                                         \
     } while (0)
 
 
 
-//long long NvGlDemoSysTime(void);
-//#define SYSTIME (NvGlDemoSysTime)
-
 // More complex functions have their own OS-specific implementation
-void
-NvGlDemoLog(
-    const char* message, ...);
-
-char*
-NvGlDemoLoadFile(
-    const char *file,
-    unsigned int *size);
-    // Window System and EGL objects
+void NvGlDemoLog(const char* message, ...);
 typedef struct NvGlDemoPlatformState NvGlDemoPlatformState;
+
 typedef struct {
     NativeDisplayType       nativeDisplay;
     NativeWindowType        nativeWindow;
@@ -110,7 +118,7 @@ NvGlDemoShutdown(void);
 EGLBoolean NvGlDemoSwapInterval(EGLDisplay dpy, EGLint interval);
 int NvGlDemoDisplayInit(void);
 void NvGlDemoDisplayTerm(void);
-int NvGlDemoWindowInit(    int* argc, char** argv,    const char* appName);
+void NvGlDemoWindowInit(    int* argc, char** argv,    const char* appName);
 void NvGlDemoWindowTerm(void);
 
 
@@ -129,7 +137,6 @@ typedef struct {
     int useCurrentMode;                     // Keeps the current display mode
     int displayRate;                        // Display refresh rate
     int displayLayer;                       // Display layer
-    float displayAlpha;                     // Display constant blending alpha
     float displayColorKey[8];               // Display color key range
                                             // [0-3] RGBA LOW, [4-7] RGBA HIGH
     int msaa;                               // Multi-sampling
@@ -159,8 +166,20 @@ typedef struct {
 
 // Global parsed options structure
 NvGlDemoOptions demoOptions;
-NvGlDemoState demoState;
 
+// Global demo state
+NvGlDemoState demoState = {
+    (NativeDisplayType)0,  // nativeDisplay
+    (NativeWindowType)0,   // nativeWindow
+    EGL_NO_DISPLAY,        // display
+    EGL_NO_STREAM_KHR,     // stream
+    EGL_NO_SURFACE,        // surface
+    (EGLConfig)0,          // config
+    EGL_NO_CONTEXT,        // context
+    0,                     // width
+    0,                     // height
+    NULL                   // platform
+};
 
 
 // Prints a message to standard out
@@ -286,7 +305,7 @@ struct PropertyIDAddress {
 
 // EGL Device internal api
 static bool NvGlDemoInitEglDevice(void);
-static bool NvGlDemoCreateEglDevice(EGLint devIndx);
+static void NvGlDemoCreateEglDevice(EGLint devIndx);
 static bool NvGlDemoCreateSurfaceBuffer(void);
 static void NvGlDemoResetEglDeviceLyrLst(struct NvGlOutputDevice *devOut);
 static void NvGlDemoResetEglDevice(void);
@@ -295,7 +314,7 @@ static void NvGlDemoTermWinSurface(void);
 
 // DRM Device internal api
 static bool NvGlDemoInitDrmDevice(void);
-static bool NvGlDemoCreateDrmDevice( EGLint devIndx );
+static void NvGlDemoCreateDrmDevice( EGLint devIndx );
 static bool NvGlDemoSetDrmOutputMode( void );
 static void NvGlDemoResetDrmDevice(void);
 static void NvGlDemoResetDrmConcetion(void);
@@ -522,15 +541,14 @@ NvGlDemoInitEglDevice_fail:
 }
 
 // Create EGLDevice desktop
-static bool NvGlDemoCreateEglDevice(EGLint devIndx)
+void NvGlDemoCreateEglDevice(EGLint devIndx)
 {
      NvGlDemoLog(__PRETTY_FUNCTION__);
    struct NvGlOutputDevice *devOut = NULL;
     EGLint n = 0;
 
-    if((!nvGlOutDevLst) || (devIndx >= g_devCount)){
-        goto NvGlDemoCreateEglDevice_fail;
-    }
+    if((!nvGlOutDevLst) || (devIndx >= g_devCount))
+        throw std::runtime_error("Bad device index");
 
     // Set device
     devOut = &nvGlOutDevLst[devIndx];
@@ -538,10 +556,8 @@ static bool NvGlDemoCreateEglDevice(EGLint devIndx)
     devOut->device = g_devList[devIndx];
     devOut->eglDpy = demoState.display;
 
-    if ((devOut->eglDpy==EGL_NO_DISPLAY)) {
-        NvGlDemoLog("peglGetPlatformDisplayEXT-fail.\n");
-        goto NvGlDemoCreateEglDevice_fail;
-    }
+    if ((devOut->eglDpy==EGL_NO_DISPLAY))
+        throw std::runtime_error("peglGetPlatformDisplayEXT-fail");
 
     // Check for output extension
     const char* exts = eglQueryString(devOut->eglDpy, EGL_EXTENSIONS);
@@ -549,23 +565,22 @@ static bool NvGlDemoCreateEglDevice(EGLint devIndx)
             !CheckExtension(exts, "EGL_EXT_output_base") ||
             !CheckExtension(exts, "EGL_KHR_stream") ||
             !CheckExtension(exts, "EGL_KHR_stream_producer_eglsurface") ||
-            !CheckExtension(exts, "EGL_EXT_stream_consumer_egloutput")) {
-        NvGlDemoLog("eglstream ext is not there..\n");
-        goto NvGlDemoCreateEglDevice_fail;
+            !CheckExtension(exts, "EGL_EXT_stream_consumer_egloutput")) 
+    {
+        throw std::runtime_error("eglstream ext is not there.");
     }
 
     // Obtain the total number of available layers and allocate an array of window pointers for them
     if (!peglGetOutputLayersEXT(devOut->eglDpy, NULL, NULL, 0, &n) || !n) 
     {
         NvGlDemoLog("peglGetOutputLayersEXT_fail[%u]\n",n);
-        goto NvGlDemoCreateEglDevice_fail;
+        throw std::runtime_error("peglGetOutputLayersEXT_fail.");
     }
     devOut->layerList  = (EGLOutputLayerEXT*)MALLOC(n * sizeof(EGLOutputLayerEXT));
     devOut->windowList = (struct NvGlDemoWindowDevice*)MALLOC(n * sizeof(struct NvGlDemoWindowDevice));
     if (!devOut->layerList || !devOut->windowList) 
     {
-        NvGlDemoLog("Failed to allocate list of layers and windows");
-        return false;
+        throw std::runtime_error("Failed to allocate list of layers and windows");
     }
 
     NvGlDemoResetEglDeviceLyrLst(devOut);
@@ -573,11 +588,6 @@ static bool NvGlDemoCreateEglDevice(EGLint devIndx)
      memset(devOut->layerList, 0, (n*sizeof(EGLOutputLayerEXT)));
 
     devOut->enflag = true;
-    return true;
-
-NvGlDemoCreateEglDevice_fail:
-
-    return false;
 }
 
 #define MAX_EGL_STREAM_ATTR 16
@@ -856,7 +866,7 @@ static int GetDrmPlaneType(int drmFd, uint32_t objectID)
 }
 
 // Create DRM/EGLDevice desktop
-static bool NvGlDemoCreateDrmDevice( EGLint devIndx )
+static void NvGlDemoCreateDrmDevice( EGLint devIndx )
 {
     NvGlDemoLog(__PRETTY_FUNCTION__);
     struct NvGlOutputDevice *devOut = NULL;
@@ -873,10 +883,9 @@ static bool NvGlDemoCreateDrmDevice( EGLint devIndx )
     devOut = &nvGlOutDevLst[devIndx];
 
     // Open DRM file and query resources
-    if ((drmName = peglQueryDeviceStringEXT(g_devList[devIndx],
-                                           EGL_DRM_DEVICE_FILE_EXT)) == NULL) {
-        NvGlDemoLog("EGL_DRM_DEVICE_FILE_EXT fail\n");
-        return false;
+    if ((drmName = peglQueryDeviceStringEXT(g_devList[devIndx], EGL_DRM_DEVICE_FILE_EXT)) == NULL) 
+    {
+        throw std::runtime_error("EGL_DRM_DEVICE_FILE_EXT fail");
     }
 
     // Check if the backend is drm-nvdc
@@ -888,31 +897,28 @@ static bool NvGlDemoCreateDrmDevice( EGLint devIndx )
 
     if (nvGlDrmDev->fd < 0) {
         NvGlDemoLog("%s open fail\n", drmName);
-        return false;
+        throw std::runtime_error("device open fail");
     }
 
-    if (!(pdrmSetClientCap(nvGlDrmDev->fd, DRM_CLIENT_CAP_ATOMIC, 1) == 0)) {
-        NvGlDemoLog("DRM_CLIENT_CAP_ATOMIC not available.\n");
-        return false;
+    if (!(pdrmSetClientCap(nvGlDrmDev->fd, DRM_CLIENT_CAP_ATOMIC, 1) == 0)) 
+    {
+        throw std::runtime_error("DRM_CLIENT_CAP_ATOMIC not available");
     }
 
-    if (!(pdrmSetClientCap(nvGlDrmDev->fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) == 0)) {
-        NvGlDemoLog("DRM_CLIENT_CAP_UNIVERSAL_PLANES not available.\n");
-        return false;
+    if (!(pdrmSetClientCap(nvGlDrmDev->fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) == 0)) 
+    {
+        throw std::runtime_error("DRM_CLIENT_CAP_UNIVERSAL_PLANES not available");
     }
 
     if ((nvGlDrmDev->res = pdrmModeGetResources(nvGlDrmDev->fd)) == NULL) {
-        NvGlDemoLog("pdrmModeGetResources fail\n");
-        return false;
+        throw std::runtime_error("pdrmModeGetResources fail\n");
     }
     if ((nvGlDrmDev->planes = pdrmModeGetPlaneResources(nvGlDrmDev->fd)) == NULL) {
-        NvGlDemoLog("pdrmModeGetPlaneResources fail\n");
-        return false;
+        throw std::runtime_error("pdrmModeGetPlaneResources fail\n");
     }
     // Validate connector, if requested
     if (nvGlDrmDev->connDefault >= nvGlDrmDev->res->count_connectors) {
-        NvGlDemoLog("con def != max con\n");
-        return false;
+        throw std::runtime_error("con def != max con\n");
     }
 
     // Allocate info arrays for DRM state
@@ -920,8 +926,7 @@ static bool NvGlDemoCreateDrmDevice( EGLint devIndx )
     nvGlDrmDev->crtcInfo = (NvGlDemoDRMCrtc*)malloc(nvGlDrmDev->res->count_crtcs * sizeof(NvGlDemoDRMCrtc));
     nvGlDrmDev->planeInfo = (NvGlDemoDRMPlane*)malloc(nvGlDrmDev->planes->count_planes * sizeof(NvGlDemoDRMPlane));
     if (!nvGlDrmDev->connInfo || !nvGlDrmDev->crtcInfo || !nvGlDrmDev->planeInfo) {
-        NvGlDemoLog("Drm Res Alloc fail\n");
-        return false;
+        throw std::runtime_error("Drm Res Alloc fail\n");
     }
     memset(nvGlDrmDev->connInfo, 0, nvGlDrmDev->res->count_connectors * sizeof(NvGlDemoDRMConn));
     memset(nvGlDrmDev->crtcInfo, 0, nvGlDrmDev->res->count_crtcs * sizeof(NvGlDemoDRMCrtc));
@@ -1006,11 +1011,8 @@ static bool NvGlDemoCreateDrmDevice( EGLint devIndx )
     }
 
     if (!devOut->layerCount) {
-        NvGlDemoLog("Layer count is 0.\n");
-        return false;
+        throw std::runtime_error("Layer count is 0.");
     }
-
-    return true;
 }
 
 /*
@@ -1097,14 +1099,6 @@ static bool NvGlDemoSetDrmOutputMode( void )
        demoOptions.windowSize[0] = 640;
         demoOptions.windowSize[1] = 480;
 
-    // Parse global plane alpha
-    if(demoOptions.displayAlpha < 0.0 || demoOptions.displayAlpha > 1.0) {
-        //If unspecified or out of range, default to 1.0
-        NvGlDemoLog("Alpha value specified for constant blending is not in range [0, 1]. Using alpha 1.0.\n");
-        demoOptions.displayAlpha = 1.0;
-    }
-    alpha = (unsigned int)(demoOptions.displayAlpha * 255);
-
     offsetX = demoOptions.windowOffset[0];
     offsetY = demoOptions.windowOffset[1];
     sizeX = demoOptions.windowSize[0];
@@ -1134,30 +1128,39 @@ static bool NvGlDemoSetDrmOutputMode( void )
         pdrmModeFreeEncoder(enc);
     }
 
-    if (nvGlDrmDev->connInfo[nvGlDrmDev->curConnIndx].crtcMapping >= 0) {
+    if (nvGlDrmDev->connInfo[nvGlDrmDev->curConnIndx].crtcMapping >= 0) 
+    {
         crtcIndex = nvGlDrmDev->connInfo[nvGlDrmDev->curConnIndx].crtcMapping;
         assert(crtcIndex == nvGlDrmDev->currCrtcIndx);
-    } else if (nvGlDrmDev->currCrtcIndx >= 0) {
+    } 
+    else if (nvGlDrmDev->currCrtcIndx >= 0) 
+    {
         crtcIndex = nvGlDrmDev->currCrtcIndx;
         assert(!nvGlDrmDev->crtcInfo[crtcIndex].mapped);
-    } else {
-        for (crtcIndex=0; crtcIndex<nvGlDrmDev->res->count_crtcs; ++crtcIndex) {
-            if (!nvGlDrmDev->crtcInfo[crtcIndex].mapped &&
-                    (nvGlDrmDev->connInfo[nvGlDrmDev->curConnIndx].crtcMask & (1 << crtcIndex))) {
+    }
+    else 
+    {
+        for (crtcIndex=0; crtcIndex<nvGlDrmDev->res->count_crtcs; ++crtcIndex) 
+        {
+            if (!nvGlDrmDev->crtcInfo[crtcIndex].mapped &&        (nvGlDrmDev->connInfo[nvGlDrmDev->curConnIndx].crtcMask & (1 << crtcIndex))) 
+            {
                 break;
             }
         }
-        if (crtcIndex == nvGlDrmDev->res->count_crtcs) {
+        if (crtcIndex == nvGlDrmDev->res->count_crtcs) 
+        {
             goto NvGlDemoSetDrmOutputMode_fail;
         }
     }
 
     // Set the CRTC if we haven't already done it
-    if (!nvGlDrmDev->crtcInfo[crtcIndex].mapped) {
-        if (demoOptions.displaySize[0]) {
-
+    if (!nvGlDrmDev->crtcInfo[crtcIndex].mapped) 
+    {
+        if (demoOptions.displaySize[0]) 
+        {
             // Check whether the choosen mode is supported or not
-            for (i=0; i<conn->count_modes; ++i) {
+            for (i=0; i<conn->count_modes; ++i) 
+            {
                 drmModeModeInfoPtr mode = conn->modes + i;
                 if (mode->hdisplay == demoOptions.displaySize[0]
                     && mode->vdisplay == demoOptions.displaySize[1]) {
@@ -1517,26 +1520,23 @@ void NvGlDemoDisplayTerm(void)
     
 }
 
-int NvGlDemoWindowInit(
+void NvGlDemoWindowInit(
         int* argc, char** argv,
         const char* appName)
 {
  
     // Create the EGL Device and DRM Device
-    if(!NvGlDemoCreateEglDevice(demoState.platform->curDevIndx))
-        return false;
+    NvGlDemoCreateEglDevice(demoState.platform->curDevIndx);
         
-     if(!NvGlDemoCreateDrmDevice(demoState.platform->curDevIndx))
-       return false;
+    NvGlDemoCreateDrmDevice(demoState.platform->curDevIndx);
 
     // Make the Output requirement for Devices
     if(!NvGlDemoSetDrmOutputMode())
-        return false;
+        throw std::runtime_error("NvGlDemoSetDrmOutputMode failed");
 
     if(!NvGlDemoCreateSurfaceBuffer())
-        return false;
+        throw std::runtime_error("NvGlDemoCreateSurfaceBuffer failed");
 
-    return true;
 }
 
 // Close the window
@@ -1630,22 +1630,6 @@ void NvGlDemoSetDisplayAlpha(float alpha)
 }
 
 
-// Global demo state
-NvGlDemoState demoState = {
-    (NativeDisplayType)0,  // nativeDisplay
-    (NativeWindowType)0,   // nativeWindow
-    EGL_NO_DISPLAY,        // display
-    EGL_NO_STREAM_KHR,     // stream
-    EGL_NO_SURFACE,        // surface
-    (EGLConfig)0,          // config
-    EGL_NO_CONTEXT,        // context
-    0,                     // width
-    0,                     // height
-    NULL                   // platform
-};
-int parseComplete = 0;
-int parseFailed = 0;
-
 
 // Maximum number of attributes for EGL calls
 #define MAX_ATTRIB 31
@@ -1663,7 +1647,6 @@ NvGlDemoInitialize(
 
     // Initialize options
     MEMSET(&demoOptions, 0, sizeof(demoOptions));
-    demoOptions.displayAlpha = -1.0;
     demoOptions.displayColorKey[0] = -1.0;
     demoOptions.renderahead = -1;
     demoOptions.timeout         = 16000;
@@ -1688,8 +1671,8 @@ EGLBoolean NvGlDemoPrepareStreamToAttachProducer(void)
 {
     NvGlDemoLog(__PRETTY_FUNCTION__);
 
-    PFNEGLQUERYSTREAMKHRPROC peglQueryStreamKHR = NULL;
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryStreamKHR, fail, PFNEGLQUERYSTREAMKHRPROC);
+    auto peglQueryStreamKHR = GetEglFunction<decltype(eglQueryStreamKHR)>("eglQueryStreamKHR");
+
 
     // Wait for the consumer to connect to the stream or for failure
     EGLint streamState = EGL_STREAM_STATE_INITIALIZING_NV;//EGL_STREAM_STATE_EMPTY_KHR;
@@ -1738,6 +1721,7 @@ int NvGlDemoInitializeParsed(
     GLint max_VP_dims[] = {-1, -1};
    // #define eglExtType  EGL_PLATFORM_DEVICE_EXT
    int eglExtType = 0;
+    bool NOT_CONSUMER = true;
 
     if (!NvGlDemoDisplayInit()) 
         return 0;
@@ -1769,18 +1753,13 @@ int NvGlDemoInitializeParsed(
     }
 
     if (demoState.display == EGL_NO_DISPLAY) 
-    {
-        NvGlDemoLog("EGL failed to obtain display.\n");
-        goto fail;
-    }
+        throw std::runtime_error("EGL failed to obtain display");
 
     // Initialize EGL
     NvGlDemoLog("eglInitialize demoState.display=%d",demoState.display);
     eglStatus = eglInitialize(demoState.display, 0, 0);
-    if (!eglStatus) {
-        NvGlDemoLog("EGL failed to initialize.\n");
-        goto fail;
-    }
+    if (!eglStatus) 
+        throw std::runtime_error("EGL failed to initialize");
 
     // Query EGL extensions
     extensions = eglQueryString(demoState.display, EGL_EXTENSIONS);
@@ -1789,9 +1768,11 @@ int NvGlDemoInitializeParsed(
     NvGlDemoLog("eglBindAPI");
     eglBindAPI(EGL_OPENGL_ES_API);
 
+    int surfaceTypeMask = 0;
 
-    PFNEGLQUERYSTREAMKHRPROC peglQueryStreamKHR = NULL;
-    NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryStreamKHR, fail, PFNEGLQUERYSTREAMKHRPROC);
+    auto peglQueryStreamKHR = GetEglFunction<decltype(eglQueryStreamKHR)>("eglQueryStreamKHR");
+    //PFNEGLQUERYSTREAMKHRPROC peglQueryStreamKHR = NULL;
+    //NVGLDEMO_EGL_GET_PROC_ADDR(eglQueryStreamKHR, fail, PFNEGLQUERYSTREAMKHRPROC);
 
     // Request GL version
     cfgAttrs[cfgAttrIndex++] = EGL_RENDERABLE_TYPE;
@@ -1812,7 +1793,6 @@ int NvGlDemoInitializeParsed(
     cfgAttrs[cfgAttrIndex++] = EGL_ALPHA_SIZE;
     cfgAttrs[cfgAttrIndex++] = 1;
 
-    int surfaceTypeMask = 0;
 
     NvGlDemoLog("Setting surface size attributes");
     surfaceTypeMask |= EGL_STREAM_BIT_KHR;
@@ -1844,14 +1824,11 @@ int NvGlDemoInitializeParsed(
         cfgAttrs[cfgAttrIndex++] = demoOptions.csaa ? 1 : 0;
     } else
 #endif // EGL_NV_coverage_sample
-    if (demoOptions.csaa) {
-        NvGlDemoLog("Coverage sampling not supported.\n");
-        goto fail;
-    }
-    if (demoOptions.isProtected && !STRSTR(extensions, "EGL_EXT_protected_content")) {
-        NvGlDemoLog("VPR memory is not supported");
-        goto fail;
-    }
+    if (demoOptions.csaa) 
+        throw std::runtime_error("Coverage sampling not supported");
+
+    if (demoOptions.isProtected && !STRSTR(extensions, "EGL_EXT_protected_content")) 
+        throw std::runtime_error("VPR memory is not supported");
 
     // NvGlDemoInterface_QnxScreen will be set as the platform for QNX while creating window surface
     {
@@ -1921,12 +1898,10 @@ int NvGlDemoInitializeParsed(
     configList = 0;
     NvGlDemoLog("Got config");
 
-     if (!NvGlDemoWindowInit(argc, argv, appName)) 
-        goto fail;
+    NvGlDemoWindowInit(argc, argv, appName);
 
     // For cross-p mode consumer, demoState.stream = EGL_NO_STREAM_KHR. But we don't need the
     // below code path.
-    bool NOT_CONSUMER = true;
     if(demoState.stream != EGL_NO_STREAM_KHR && NOT_CONSUMER) 
     {
         NvGlDemoLog("A stream + !consumer");
